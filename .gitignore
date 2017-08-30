@@ -1,0 +1,8 @@
+data/
+*.mp4
+*.fits
+*.p
+*.txt
+*.csv
+*__pycache__
+*.ipynb_checkpoints*
