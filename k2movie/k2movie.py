@@ -1,3 +1,9 @@
+'''
+Creates movies from HDF5 database of TPFs
+
+Example usage coming soon.
+'''
+
 from astropy.utils.data import download_file
 import pandas as pd
 import numpy as np
@@ -10,115 +16,183 @@ import time
 from tqdm import tqdm
 import matplotlib.patheffects as path_effects
 from matplotlib import animation
+import K2ephem
+from K2fov.K2onSilicon import onSiliconCheck,fields
+from astropy.time import Time
 
 
-class k2movie(object):
+class MovieObject(object):
     '''Object to hold all the data'''
     def __init__(self,
                 name=None,
-                campaign=0,
-                channel=1,
-                cadence=0,
+                campaign=None,
+                channel=None,
+                cadence=None,
                 loc=None,
                 tol=50,
                 return_radec=False,
                 return_xy=False,
                 data_dir='/Users/ch/K2/projects/chiron/database/',
                 verbose=False,
-                outfile='out.mp4',
-                vmin=2,
-                vmax=5,
+                outfile=None,
+                vmin=0,
+                vmax=3,
                 title=None,
                 inset=True,
-                inset_size=10):
+                inset_size=10,
+                output_dir=''):
         self.verbose=verbose
         self.dir=data_dir
         self.campaign = campaign
-        self.channel = channel
+        if campaign is None:
+            print('No campaign specified? Trying C0.')
+            self.campaign=0
+
+
+        self.start_time=(2384.45356226+2454833.) #Need start times for all campaigns in JD
+        self.end_time=(2463.38184521+2454833.) #Need start times for all campaigns in JD
+        self.LC=29.4295*u.min
+
+
+        self.ncad=np.round(((self.end_time-self.start_time)*u.day)/(self.LC).to(u.day))
+
         if isinstance(cadence,int):
             self.cadence = [cadence]
         else:
             self.cadence = cadence
+        if isinstance(channel,int):
+            self.channel = [channel]
+        else:
+            self.channel = channel
+
         self.loc=loc
         self.tol=tol
         self.return_radec=return_radec
         self.return_xy=return_xy
-        self.wcs_file='/Users/ch/K2/repos/k2mosaic/k2mosaic/data/wcs/c{0:02}_'.format(campaign)+'{0:02}.p'.format(channel)
-        self.r = pickle.load(open(self.wcs_file,'rb'))
-        self.outfile=outfile
         self.inset=inset
         self.vmin=vmin
         self.vmax=vmax
         self.title=title
         self.inset_size=inset_size
+        self.name=name
+        if (self.name is None)==False:
+            self.find()
+        if self.channel is None:
+            print('No channel?')
+
+
+        if outfile is None:
+            if self.name is None:
+                self.outfile='{}out.mp4'.format(output_dir)
+            else:
+                self.outfile='{}{}.mp4'.format(output_dir,self.name)
+        else:
+            self.outfile=outfile
+
+        if title is None:
+            if (self.name is None) == False:
+                self.title=self.name
+        else:
+            self.title=title
+
+
+        self.fnames=[self.dir+'c{}/{}/0.h5'.format('{0:02}'.format(self.campaign),'{0:02}'.format(c)) for c in self.channel]
+        if self.verbose:
+            print('\tFilenames:')
+            for f in self.fnames:
+                print('\t\t{}'.format(f))
+
+        self.fname=self.fnames[0]
+        print(self.fname)
+        if os.path.isfile(self.fname) == False:
+            print('No files found?')
+        self.df=dd.read_hdf((self.fname), key='table')
+        self.cols=np.asarray(self.df.columns[4:],dtype=float)
+        self.cadence_names=np.asarray(self.df.columns[4:],dtype=int)
+        if (self.cadence is None) == False:
+                self.cadence_names=self.cadence_names[self.cadence]
+
+        #JUST ONE CHANNEL FOR NOW
+        self.channel=self.channel[0]
+        self.wcs_file='/Users/ch/K2/repos/k2mosaic/k2mosaic/data/wcs/c{0:02}_'.format(self.campaign)+'{0:02}.p'.format(self.channel)
+        self.r = pickle.load(open(self.wcs_file,'rb'))
         if self.verbose:
             print('Initialised:')
             print('\tCampaign: {}'.format(self.campaign))
             print('\tChannel: {}'.format(self.channel))
             print('\tCadence: {}'.format(self.cadence))
             print('\tPixel Tolerance: {}'.format(self.tol))
-        self.start_time=(2384.45356226+2454833.) #Need start times for all campaigns in JD
-        self.LC=29.4295*u.min
-        self.name=name
-        if (self.name is None):
-            find()
 
-        if (self.channel is None):
-            self.fname=(self.dir+'c{}/{}/0.h5'.format('{0:02}'.format(self.campaign),'*'))
-        else:
-            self.fname=(self.dir+'c{}/{}/0.h5'.format('{0:02}'.format(self.campaign),'{0:02}'.format(self.channel)))
-        self.df=dd.read_hdf(self.fname, key='table')
-        self.cols=np.asarray(self.df.columns[4:],dtype=float)
-        self.cadence_names=np.asarray(self.df.columns[4:],dtype=int)
-        if (self.cadence is None) == False:
-                self.cadence_names=self.cadence_names[self.cadence]
 
     def find(self):
-        if (loc is None) == False:
+        '''Find the ras and decs of the target'''
+        if (self.loc is None) == False:
             print ('Location and Target Name specified. Using Target Name')
+            self.loc=None
         else:
             if self.verbose:
                 print('Finding {}'.format(self.name))
         #Query simbad?
+        self.findStatic()
+        #If it's still not right...Query JPL?
+        if self.loc is None:
+            self.findMoving()
+        if self.loc is None:
+            print ('No target found?')
 
-        #Query JPL?
-        ra,dec,channel=findMoving(self.name,self.campaign)
-        self.loc=[ra,dec]
-        self.channel=channel[0]
 
+    def findStatic(self):
+        print("Need to query Simbad and MAST")
 
-
-    def findMoving(self,name,campaign):
-        cadtime=((self.cols-self.cols[0])*self.LC).to(u.day).value+self.start_time
+    def findMoving(self):
+        if self.verbose:
+            print('Finding a moving target')
+        time=(np.arange(self.ncad)*self.LC).to(u.day).value+self.start_time
 
         #Sparsely look to save time
-        cad=np.arange(0,len(self.cols),100)
+        cad=np.asarray(np.arange(0,self.ncad,100),dtype=int)
 
         #Get the ephemeris from JPL
-        df=K2ephem.get_ephemeris_dataframe(name,campaign,campaign,step_size=1./(4))
+        df=K2ephem.get_ephemeris_dataframe(self.name,self.campaign,self.campaign,step_size=1./(4))
         times=[t[0:23] for t in np.asarray(df.index,dtype=str)]
         df_jd=Time(times,format='isot').jd
-        ra,dec=np.interp(cadtime[cad],df_jd,df.ra)*u.deg,np.interp(cadtime[cad],df_jd,df.dec)*u.deg
-
-        #Find those on silicon
-        k = fields.getKeplerFov(campaign)
-        mask=list(map(onSiliconCheck,ra.value,dec.value,np.repeat(k,len(ra))))
-        ra,dec=[ra[mask],dec[mask]]
-        channel=np.asarray(np.unique(k.getChannelColRowList(ra.value,dec.value)),dtype=int)
-        if self.verbose():
-            print('Channels: '.format(channel))
-        #Use only those that are actually on Silicon
-        cad=cad[mask]
-        cad=np.arange(cad[0],cad[-1])
-        #Interpolate each cadence
-        ra,dec=np.interp(cadtime[cad],df_jd,df.ra)*u.deg,np.interp(cadtime[cad],df_jd,df.dec)*u.deg
-        return ra,dec,channel
 
 
+
+        if (self.cadence is None):
+            #Find those on silicon
+            ra,dec=np.interp(time[cad],df_jd,df.ra)*u.deg,np.interp(time[cad],df_jd,df.dec)*u.deg
+            k = fields.getKeplerFov(self.campaign)
+            mask=list(map(onSiliconCheck,ra.value,dec.value,np.repeat(k,len(ra))))
+            ra,dec=[ra[mask],dec[mask]]
+            channel=(np.asarray(np.unique(k.getChannelColRowList(ra.value,dec.value)[0]),dtype=int))
+            if self.verbose:
+                print('\tChannels: {}'.format(channel))
+            #Use only those that are actually on Silicon
+            #Unless cadences are specified?
+            cad=cad[mask]
+            cad=np.arange(cad[0],cad[-1])
+            self.cadence=cad
+            #Interpolate each cadence
+            ra,dec=np.interp(time[cad],df_jd,df.ra)*u.deg,np.interp(time[cad],df_jd,df.dec)*u.deg
+            if self.verbose:
+                print('\tFound ras and decs: {}{}'.format(ra[0],dec[0]))
+            self.loc=[ra,dec]
+            self.channel=channel
+        else:
+            #Use the cadences specified
+            cad=self.cadence
+            ra,dec=np.interp(time[cad],df_jd,df.ra)*u.deg,np.interp(time[cad],df_jd,df.dec)*u.deg
+            k = fields.getKeplerFov(self.campaign)
+            channel=(np.asarray(np.unique(k.getChannelColRowList(ra.value,dec.value)[0]),dtype=int))
+            if self.verbose:
+                print('\tChannels: {}'.format(channel))
+            self.loc=[ra,dec]
+            self.channel=channel
 
 
     def find_loc(self):
-        '''Find the location, should be it's own function. Should output the right channel number.'''
+        '''Find the location of the target on the detector'''
         if (self.loc is None):
             print ('No location specified')
             return None
@@ -135,7 +209,6 @@ class k2movie(object):
             x1,y1=(np.asarray(self.r.wcs_world2pix(xpos,ypos,1),dtype=int))
         else:
             y1,x1=ypos,xpos
-
 
         if isinstance(x1,int) or isinstance(x1,float) or isinstance(x1,np.int64):
             x1=[x1]
@@ -250,7 +323,7 @@ class k2movie(object):
             print('Writing to movie')
             print ('\tOutput file: {}'.format(self.outfile))
         cmap = plt.get_cmap('gray')
-        #cmap.set_bad('black',1.)
+        cmap.set_bad('black',1.)
         #If there's not a lot of movement the movie should be fixed
         fig=plt.figure(figsize=(4,4))
         ax=fig.add_subplot(111)
@@ -351,6 +424,6 @@ class k2movie(object):
             self.find_loc()
             if radec==True:
                 ra,dec=self.r.wcs_pix2world(self.x1,self.y1,1)
-                ax.scatter(ra,dec,c='C3')
+                ax.plot(ra,dec,c='C1',lw=5,alpha=0.3)
             else:
                 ax.scatter(self.x1,self.y1)

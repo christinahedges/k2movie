@@ -8,3 +8,5 @@ data/
 *.ipynb_checkpoints*
 *.png
 database/
+scratch/
+movies/
