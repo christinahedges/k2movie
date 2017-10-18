@@ -1,0 +1,3 @@
+[console_scripts]
+k2movie = k2movie.ui:k2movie
+

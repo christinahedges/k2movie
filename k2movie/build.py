@@ -27,7 +27,7 @@ def silence():
                 sys.stdout = old_stdout
 
 WCS_DIR = os.path.join(PACKAGEDIR, 'data', 'wcs/')
-
+DATA_DIR = os.path.join(PACKAGEDIR, 'data', 'database/')
 
 def pickle_wcs(output_fn=WCS_DIR, ffi_store=None):
     '''Writes the WCS solution function of each campaign and module to a pickled
@@ -154,11 +154,13 @@ def get_dir_size(start_path = '.'):
             total_size += os.path.getsize(fp)
     return total_size
 
-def build(dir,indir=None,verbose=True,cachelim=30,overwrite=False):
+def build(dir=DATA_DIR,indir=None,verbose=True,cachelim=30,overwrite=False,campaigns=None,channels=None):
     '''Creates a database of HDF5 files'''
 
     print ('-------------------------------')
-    print ('Crunching K2 TPFS')
+    print ('Building K2 TPF HDF5 database.')
+    if not verbose:
+        print('Trying running with verbose enabled for more information.')
     if (os.path.isdir(WCS_DIR) == False):
         print ('No WCS Files Found')
         os.makedirs(WCS_DIR)
@@ -170,17 +172,24 @@ def build(dir,indir=None,verbose=True,cachelim=30,overwrite=False):
         os.makedirs(dir)
     if indir is None:
         print('No input directory. Building URLS using k2mosaic.')
+    else:
+        print('Input directory: {}'.format(indir))
+        print('Assuming MAST-like structure.')
 
     if verbose:
         if overwrite:
             print('Overwrite enabled.')
-    for campaign in range(14):
+
+    if campaigns is None:
+        campaigns=range(14)
+    if channels is None:
+        channels=range(1,85)
+
+    for campaign in campaigns:
         cdir='{}'.format(dir)+'c{0:02}/'.format(campaign)
         if not os.path.isdir(cdir):
             os.makedirs(cdir)
-            print (cdir)
-        for ext in range(1,85):
-
+        for ext in channels:
             edir='{}'.format(cdir)+'{0:02}/'.format(ext)
             if not os.path.isdir(edir):
                 os.makedirs(edir)
@@ -188,11 +197,12 @@ def build(dir,indir=None,verbose=True,cachelim=30,overwrite=False):
                 if (os.path.isfile('{}'.format(edir)+'0.h5')):
                     if verbose:
                         print('File Exists. Skipping. Set overwrite to True to overwrite.')
-                        continue
+                    continue
             try:
                 urls = mast.get_tpf_urls('c{}'.format(campaign), ext)
             except:
-                print('Channel {} : No URLS found?'.format(ext))
+                if verbose:
+                    print('Channel {} : No URLS found?'.format(ext))
                 continue
             cache_size=get_dir_size(get_cache_dir())/1E9
 
@@ -208,25 +218,38 @@ def build(dir,indir=None,verbose=True,cachelim=30,overwrite=False):
                 print ('Cache hit limit of {} gb. Clearing.'.format(cachelim))
                 clear_download_cache()
 
-            print ('Downloading/Caching')
-            return
-            tpf_filenames=[None]*len(urls)
-            if verbose:
-                for i,u in enumerate(urls):
-                    tpf_filenames[i] = download_file(u,cache=True)
+            if (indir is None)==False:
+                if verbose:
+                    print('Building from input')
+                tpf_filenames=np.asarray(['{}{}'.format(indir,u.split('https://archive.stsci.edu/missions/k2/target_pixel_files/')[-1]) for u in urls])
+                if os.path.isfile(tpf_filenames[0]) is False:
+                    tpf_filenames=np.asarray(['{}{}'.format(indir,(u.split('https://archive.stsci.edu/missions/k2/target_pixel_files/')[-1])).split('.gz')[0] for u in urls])
+                if os.path.isfile(tpf_filenames[0]) is False:
+                    if verbose:
+                        print ('No MAST structure...trying again.')
+                    tpf_filenames=np.asarray(['{}{}'.format(indir,(u.split('https://archive.stsci.edu/missions/k2/target_pixel_files/')[-1]).split('/')[-1]) for u in urls])
+                if os.path.isfile(tpf_filenames[0]) is False:
+                    tpf_filenames=np.asarray(['{}{}'.format(indir,((u.split('https://archive.stsci.edu/missions/k2/target_pixel_files/')[-1]).split('/')[-1])).split('.gz')[0] for u in urls])
             else:
-
-                with click.progressbar(length=len(urls)) as bar:
+                if verbose:
+                    print ('Downloading/Caching')
+                tpf_filenames=[None]*len(urls)
+                if verbose:
                     for i,u in enumerate(urls):
-                        with silence():
-                            tpf_filenames[i] = download_file(u,cache=True)
-                        bar.update(1)
-            tpf_filenames=np.asarray(tpf_filenames)
+                        tpf_filenames[i] = download_file(u,cache=True)
+                else:
+
+                    with click.progressbar(length=len(urls)) as bar:
+                        for i,u in enumerate(urls):
+                            with silence():
+                                tpf_filenames[i] = download_file(u,cache=True)
+                            bar.update(1)
+                tpf_filenames=np.asarray(tpf_filenames)
+            print('Building Campaign {} Channel {}'.format(campaign,ext))
             hdf5_mosaic(tpf_filenames, campaign, ext,
                         output_prefix='{}'.format(edir),verbose=verbose)
             if verbose:
-                print ('Complete')
+                print ('Campaign {} Complete'.format(campaign))
                 print ('-------------------------------')
-        break
     print ('ALL DONE')
     print ('-------------------------------')

@@ -36,11 +36,25 @@ def k2movie(**kwargs):
               help='Directory containing TPFs. If blank, will download from mast')
 @click.option('-lim', '--cachelim', type=int, default=30,
               help='Size limit for file caching in gb.')
+@click.option('-c', '--campaign', type=int, default=-1,
+              help='Campaign to crunch. Default: crunch all')
+@click.option('-ch', '--channel', type=int, default=-1,
+              help='Channel to crunch. Default: crunch all')
 
 
-def crunch(dir,input,verbose,cachelim,overwrite):
+def database(dir,input,verbose,cachelim,overwrite,campaign,channel):
     '''Creates a database of HDF5 binaries filled with TPFs'''
-    build(dir,input,verbose,cachelim,overwrite)
+    if campaign == -1:
+        campaign=None
+    else:
+        campaign=[campaign]
+
+    if channel == -1:
+        channel=None
+    else:
+        channel=[channel]
+
+    build(dir,input,verbose,cachelim,overwrite,campaign,channel)
     return
 
 

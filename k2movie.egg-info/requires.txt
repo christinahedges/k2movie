@@ -1,0 +1,7 @@
+astropy>=0.4
+numpy
+pandas
+click
+requests
+imageio>=1
+K2ephem

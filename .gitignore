@@ -2,7 +2,6 @@ data/
 *.mp4
 *.fits
 *.p
-*.txt
 *.csv
 *__pycache__
 *.ipynb_checkpoints*
@@ -10,3 +9,4 @@ data/
 database/
 scratch/
 movies/
+k2movie/data/wcs/
