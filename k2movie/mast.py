@@ -4,14 +4,14 @@ import time
 import re
 import json
 
-try: # Python 3.x
+try:  # Python 3.x
     from urllib.parse import quote as urlencode
     from urllib.request import urlretrieve
 except ImportError:  # Python 2.x
     from urllib import pathname2url as urlencode
     from urllib import urlretrieve
 
-try: # Python 3.x
+try:  # Python 3.x
     import http.client as httplib
 except ImportError:  # Python 2.x
     import httplib
@@ -19,7 +19,7 @@ except ImportError:  # Python 2.x
 
 def mastQuery(request):
 
-    server='masttest.stsci.edu'
+    server = 'masttest.stsci.edu'
 
     # Grab Python Version
     version = ".".join(map(str, sys.version_info[:3]))
@@ -27,7 +27,7 @@ def mastQuery(request):
     # Create Http Header Variables
     headers = {"Content-type": "application/x-www-form-urlencoded",
                "Accept": "text/plain",
-               "User-agent":"python-requests/"+version}
+               "User-agent": "python-requests/"+version}
 
     # Encoding the request as a json string
     requestString = json.dumps(request)
@@ -47,22 +47,23 @@ def mastQuery(request):
     # Close the https connection
     conn.close()
 
-    return head,content
+    return head, content
+
 
 def findMAST(epic):
-    if (isinstance(epic,str) is False):
+    if (isinstance(epic, str) is False):
         print('Please pass a string to query.')
         return
-    resolverRequest = {'service':'Mast.Name.Lookup',
-                         'params':{'input':epic,
-                                   'format':'json'},
-                         }
+    resolverRequest = {'service': 'Mast.Name.Lookup',
+                       'params': {'input': epic,
+                                  'format': 'json'},
+                       }
 
-    headers,resolvedObjectString = mastQuery(resolverRequest)
+    headers, resolvedObjectString = mastQuery(resolverRequest)
     resolvedObject = json.loads(resolvedObjectString)
     try:
         objRa = resolvedObject['resolvedCoordinate'][0]['ra']
         objDec = resolvedObject['resolvedCoordinate'][0]['decl']
-        return objRa,objDec
+        return objRa, objDec
     except:
-        return None,None
+        return None, None

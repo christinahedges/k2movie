@@ -3,14 +3,12 @@ k2movie: Create movies of TPF super stamps
 
 **Put Target Pixel Files (TPFs) obtained by NASA's Kepler/K2 missions into superstamps and generate images and movies.**
 
-
-
 k2movie is currently under construction.
 
 Example Work Flow
 -----------------
 
-To work with the TPF files quickly we need a library of files that are easy to access quickly. This is done by creating single files which contain all pixels values, saved as binary HDF5 format tables. These can then be queried quickly using *dask* or *pandas*. The database building is expensive in time, but only happens once. Once built, it allows movies and images of the focal plane to be created in seconds to minutes.
+To work with the TPF files quickly we need a library of files that are easy to access quickly. This is done by creating single files which contain all pixels values, saved as binary HDF5 format tables. These can then be queried quickly using *dask* or *pandas*. The database building is expensive in time, but only happens once. Once built, it allows movies and images of the focal plane to be created in seconds to minutes, allowing users to quickly investigate any targets they like.
 
 To build the database use:
 ``k2movie database -c CAMPAIGN_NO -ch CHANNEL_NO``
@@ -21,18 +19,59 @@ This will create a database directory, download all TPFs from MAST in stages and
 
 ``k2movie database -in INPUT_DIRECTORY -c CAMPAIGN_NO -ch CHANNEL_NO``
 
-However, this assumes that the structure of the directories containing the TPFs is the same as the MAST structure.
-
 *Note: This will also build a set of WCS coordinates to use in the package directory.*
+
+The following command will show you the completeness of your database:
+
+``k2movie list DIRECTORY``
+
 
 
 Coming Soon
 -----------
 
-
 ``k2movie inspect NAME``
 ``k2movie movie NAME``
 
+Requires find campaign and find channels
+
+To Do
+-----
+Split campaign
+Add time in days output to movies as well as cadence number
+
+
+
+To Do
+-----
+
+* Stabilize?
+* Command line tools
+* Tutorial
+* Input EPIC ID
+* Add some unit tests
+* Multiple channels. Modules come in wrong orientation?
+* Handle split campaigns...including crunch
+
+Unit Tests:
+-----------
+**Targets:**
+
+* Single star
+* Supernova
+* Dipper
+* Asteroid
+* Superstamp
+* Variable
+* Tabby
+* Pleiades
+
+**Style**
+* Single cadence
+* Multiple cadences
+* All cadences
+* Tracking
+* Multichannel
 
 
 Attribution
