@@ -9,4 +9,5 @@ data/
 database/
 scratch/
 movies/
-k2movie/data/wcs/
+old/
+old_python/
