@@ -11,3 +11,4 @@ scratch/
 movies/
 old/
 old_python/
+.gitignore
