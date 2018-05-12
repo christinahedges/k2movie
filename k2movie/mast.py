@@ -3,6 +3,14 @@ import os
 import time
 import re
 import json
+from .build import log
+import astropy.units as u
+import K2ephem
+import numpy as np
+from astropy.time import Time
+from K2fov.K2onSilicon import onSiliconCheck, fields
+
+from .build import silence
 
 try:  # Python 3.x
     from urllib.parse import quote as urlencode
@@ -15,6 +23,10 @@ try:  # Python 3.x
     import http.client as httplib
 except ImportError:  # Python 2.x
     import httplib
+
+
+class K2MovieNoObject(Exception):
+    pass
 
 
 def mastQuery(request):
@@ -67,3 +79,36 @@ def findMAST(epic):
         return objRa, objDec
     except:
         return None, None
+
+
+def findStatic(name):
+    '''Find a static object in K2'''
+    ra, dec = findMAST(name)
+    if (ra is not None) & (dec is not None):
+        return np.asarray([ra]), np.asarray([dec])
+    else:
+        raise K2MovieNoObject('No static target {}'.format(name))
+
+
+def findMoving(name, campaign, channel, obs_time):
+    '''Find a moving object by querying JPL small bodies database'''
+    # Get the ephemeris from JPL
+    log.debug('Querying JPL')
+    try:
+        with silence():
+            df = K2ephem.get_ephemeris_dataframe(
+                name, campaign, campaign, step_size=1./(4))
+    except:
+        raise K2MovieNoObject('No moving target {}'.format(name))
+    times = [t[0:23] for t in np.asarray(df.index, dtype=str)]
+    df_jd = Time(times, format='isot').jd
+    # K2 Footprint...
+    k = fields.getKeplerFov(campaign)
+    ra, dec = np.interp(obs_time, df_jd, df.ra) * \
+        u.deg, np.interp(obs_time, df_jd, df.dec)*u.deg
+    # If no cadence specified...only use the on silicon cadences...
+    log.debug('Finding on silicon times.')
+    mask = list(map(onSiliconCheck, ra.value, dec.value, np.repeat(k, len(ra))))
+    if np.any(mask) == False:
+        raise K2MovieNoObject('No moving target {}'.format(name))
+    return ra, dec

@@ -12,3 +12,4 @@ movies/
 old/
 old_python/
 .gitignore
+k2movie/data/database/
