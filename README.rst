@@ -33,5 +33,6 @@ To Do
 -----
 
 * Automatically find campaign and channel with K2fov
-* Tutorial
+* Update demos
 * Add some unit tests
+* Check for memory leak on build
