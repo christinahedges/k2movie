@@ -39,7 +39,7 @@ class K2MovieInputError(Exception):
     pass
 
 
-class movie(object):
+class target(object):
     '''Class to create a movie of K2 data. Calling compute will run
     the movie creator.
 
@@ -58,8 +58,11 @@ class movie(object):
         location of the munged database.
     '''
 
-    def __init__(self, name=None, campaign=None, channel=None, aperture=100, database_dir=DATA_DIR, output='out.mp4'):
-        self.name = name
+    def __init__(self, targetname=None, campaign=None, channel=None, aperture=100, database_dir=DATA_DIR, output=None, pixel_loc=None, ):
+        self.name = targetname
+        self.loc = pixel_loc
+        if (self.name is None) and (pixel_loc is None):
+            raise K2MovieInputError('Target Name or location must be set.')
         if isinstance(aperture, int):
             self.aperture = np.ones((aperture, aperture))
         elif isinstance(aperture, np.ndarray):
@@ -83,7 +86,10 @@ class movie(object):
             raise K2MovieInputError('No database file. Try running '
                                     '`k2movie build -c {} -ch {}``'
                                     ' in the terminal.'.format(campaign, channel))
-        self.output = output
+        if self.name is not None:
+            self.output = '{}.mp4'.format(name)
+        else:
+            self.output = 'out.mp4'
         self.times = pd.read_csv(TIME_FILE)
         log.debug('Campaign: {}'.format(self.campaign))
         log.debug('Channel: {}'.format(self.channel))
@@ -99,11 +105,18 @@ class movie(object):
         self.end_cad = np.asarray(self.times.EndCad[self.times.Campaign == campaign_str])[0]
         self.ncad = self.end_cad - self.start_cad
         self.times = (np.arange(self.ncad)*self.LC).to(u.day).value+self.start_time
-        try:
-            self.ra, self.dec = findStatic(self.name)
-            log.debug('Found static object {}'.format(self.name))
-        except K2MovieNoObject:
-            log.debug('No static object found for {}'.format(self.name))
+        if self.name is None:
+            self.x1 = np.asarray([self.loc[0]])
+            self.y1 = np.asarray([self.loc[1]])
+        else:
+            try:
+                self.ra, self.dec = findStatic(self.name)
+                log.debug('Found static object {}'.format(self.name))
+            except K2MovieNoObject:
+                log.debug('No static object found for {}'.format(self.name))
+            self.x1, self.y1 = np.asarray([(np.asarray(self.wcs.wcs_world2pix(r, d, 1), dtype=float))
+                                           for r, d in zip(self.ra, self.dec)]).T
+
         self.df = dd.read_hdf((self.fname), key='table')
         self.y, self.x = np.asarray(self.df[['Row', 'Column']].compute()).T
         self.cols = np.asarray(self.df.columns[5:], dtype=float)
@@ -116,8 +129,6 @@ class movie(object):
             self.wcs = pickle.load(open(self.wcs_file, 'rb'))
         log.debug('Read in WCS')
         log.debug('Finding location on channel')
-        self.x1, self.y1 = np.asarray([(np.asarray(self.wcs.wcs_world2pix(r, d, 1), dtype=float))
-                                       for r, d in zip(self.ra, self.dec)]).T
         log.debug('Trimming data')
 
         self.df = self.df[(self.df['Column'] > self.x1.min()-self.tol_x) & (self.df['Column'] < self.x1.max()+self.tol_x) & (
@@ -145,17 +156,16 @@ class movie(object):
             for i, f in enumerate(a):
                 self.ar[xloc[pos].astype(int), yloc[pos].astype(int), i] = f[pos]
         log.debug('Finished ({0:0.2g}s)'.format(time.time()-start))
-        self.ar[~np.isfinite(self.ar)] = np.nan
-        self.ar[self.ar == 0] = np.nan
+        self.ar[~np.isfinite(self.ar)] = 0
 
-    def movie(self, scale='linear', title='', text=True, **kwargs):
+    def movie(self, scale='linear', text=False, **kwargs):
         '''Create a movie of a populated array'''
         log.debug('Creating movie')
         start = time.time()
         # If there's not a lot of movement the movie should be fixed
         fig = plt.figure(figsize=(4, 4))
         ax = fig.add_subplot(111)
-        ax.set_facecolor('black')
+        ax.set_facecolor('red')
         dat = (self.ar)
         if scale == 'log':
             dat = np.log10(self.ar)
@@ -163,16 +173,18 @@ class movie(object):
             # Calculate color stretch...
             y = dat.ravel()
             y = y[np.isfinite(y)]
+            y = y[y != 0]
             kwargs['vmin'] = np.percentile(y, 10)
             kwargs['vmax'] = np.percentile(y, 90)
 
         im = ax.imshow(dat[:, :, 0].T, **kwargs)
         ax.axis('off')
         if text:
-            text1 = ax.text(0.1, 0.9, title, fontsize=10,
-                            color='white', transform=ax.transAxes)
-            text1.set_path_effects([path_effects.Stroke(linewidth=2, foreground='black'),
-                                    path_effects.Normal()])
+            if self.name is not None:
+                text1 = ax.text(0.1, 0.9, self.name, fontsize=10,
+                                color='white', transform=ax.transAxes)
+                text1.set_path_effects([path_effects.Stroke(linewidth=2, foreground='black'),
+                                        path_effects.Normal()])
             text2 = ax.text(0.1, 0.83, 'Campaign {}'.format(self.campaign),
                             fontsize=8, color='white', transform=ax.transAxes)
             text2.set_path_effects([path_effects.Stroke(linewidth=2, foreground='black'),
