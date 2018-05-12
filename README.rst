@@ -26,37 +26,12 @@ The following command will show you the completeness of your database:
 Coming Soon
 -----------
 
-``k2movie inspect NAME``
 ``k2movie movie NAME``
 
 
 To Do
 -----
 
-* Stabilize?
-* Command line tools
+* Automatically find campaign and channel with K2fov
 * Tutorial
-* Input EPIC ID
 * Add some unit tests
-* Multiple channels. Modules come in wrong orientation?
-* Handle split campaigns...including crunch
-
-Unit Tests:
------------
-**Targets:**
-
-* Single star
-* Supernova
-* Dipper
-* Asteroid
-* Superstamp
-* Variable
-* Tabby
-* Pleiades
-
-**Style**
-* Single cadence
-* Multiple cadences
-* All cadences
-* Tracking
-* Multichannel
