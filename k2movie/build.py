@@ -109,7 +109,7 @@ def hdf5_mosaic(tpf_filenames, campaign, channel,
     cols = np.append(['RA', 'Dec', 'Row', 'Column', 'APERFLAG'], cols)
     df = pd.DataFrame(columns=cols, dtype=dtype)
     edf = pd.DataFrame(columns=cols, dtype=dtype)
-    fname = 'k2movie_c{}_ch{}'.format(campaign, channel)
+    fname = 'k2movie_c{0:02}_ch{1:02}'.format(campaign, channel)
     FILEPATH = '{}{}.h5'.format(output_prefix, fname)
     ERROR_FILEPATH = '{}{}_ERR.h5'.format(output_prefix, fname)
     log.debug('File path: {}'.format(FILEPATH))
@@ -229,7 +229,7 @@ def bld(dir=None, indir=None, cachelim=30, overwrite=False,
             edir = '{}'.format(cdir)+'{0:02}/'.format(ext)
             if not os.path.isdir(edir):
                 os.makedirs(edir)
-            if (os.path.isfile('{}'.format(edir)+'0.h5')):
+            if (os.path.isfile('{}'.format(edir)+'k2movie_c{0:02}_ch{1:02}.h5'.format(campaign, ext))):
                 if overwrite == False:
                     log.info('File Exists. Skipping. Set overwrite to True to overwrite.')
                     continue
