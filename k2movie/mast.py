@@ -7,6 +7,8 @@ from .build import log
 import astropy.units as u
 import K2ephem
 import numpy as np
+from astropy.time import Time
+from K2fov.K2onSilicon import onSiliconCheck, fields
 
 from .build import silence
 
@@ -83,34 +85,30 @@ def findStatic(name):
     '''Find a static object in K2'''
     ra, dec = findMAST(name)
     if (ra is not None) & (dec is not None):
-        ra, dec = ra * u.deg, dec * u.deg
-        return ra, dec
+        return np.asarray([ra]), np.asarray([dec])
     else:
         raise K2MovieNoObject('No static target {}'.format(name))
 
 
-def findMoving(name, campaign, channel, time):
+def findMoving(name, campaign, channel, obs_time):
     '''Find a moving object by querying JPL small bodies database'''
     # Get the ephemeris from JPL
-    with silence():
-        df = K2ephem.get_ephemeris_dataframe(
-            name, campaign, campaign, step_size=1./(4))
-
+    log.debug('Querying JPL')
+    try:
+        with silence():
+            df = K2ephem.get_ephemeris_dataframe(
+                name, campaign, campaign, step_size=1./(4))
+    except:
+        raise K2MovieNoObject('No moving target {}'.format(name))
     times = [t[0:23] for t in np.asarray(df.index, dtype=str)]
-    df_jd = Time(times, format='isot').jd-lag
+    df_jd = Time(times, format='isot').jd
     # K2 Footprint...
     k = fields.getKeplerFov(campaign)
-
+    ra, dec = np.interp(obs_time, df_jd, df.ra) * \
+        u.deg, np.interp(obs_time, df_jd, df.dec)*u.deg
     # If no cadence specified...only use the on silicon cadences...
+    log.debug('Finding on silicon times.')
     mask = list(map(onSiliconCheck, ra.value, dec.value, np.repeat(k, len(ra))))
     if np.any(mask) == False:
         raise K2MovieNoObject('No moving target {}'.format(name))
-
-    ra, dec = ra[mask], dec[mask]
-    pos = np.where(mask)[0]
-    cad = cad[pos.min()-1:pos.max()+1]
-    cad = np.arange(cad[0], cad[-1])
-    # Interpolate each cadence
-    ra, dec = np.interp(time[cad], df_jd, df.ra) * \
-        u.deg, np.interp(time[cad], df_jd, df.dec)*u.deg
     return ra, dec
