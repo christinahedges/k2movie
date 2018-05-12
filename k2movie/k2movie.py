@@ -22,11 +22,12 @@ from K2fov.K2onSilicon import onSiliconCheck, fields
 from astropy.time import Time
 from astropy.stats import sigma_clipped_stats
 from astropy.stats import SigmaClip
+from astropy.wcs import FITSFixedWarning
 from photutils import IRAFStarFinder
 from photutils import Background2D, MedianBackground
 
 from . import PACKAGEDIR
-from .mast import findMAST
+from .mast import *
 from .build import *
 
 DATA_DIR = os.path.join(PACKAGEDIR, 'data', 'database/')
@@ -34,123 +35,56 @@ TIME_FILE = os.path.join(PACKAGEDIR, 'data', 'campaign_times.txt')
 WCS_DIR = os.path.join(PACKAGEDIR, 'data', 'wcs/')
 
 
+class K2MovieInputError(Exception):
+    pass
+
+
 class movie(object):
-    '''Object to create a movie of K2 data. Calling compute will run
-    the movie creator.'''
+    '''Class to create a movie of K2 data. Calling compute will run
+    the movie creator.
 
-    def __init__(self,
-                 name=None,
-                 campaign=None,
-                 channel=None,
-                 cadence=None,
-                 loc=None,
-                 tol=50,
-                 colorbar=False,
-                 return_radec=False,
-                 return_xy=False,
-                 data_dir=DATA_DIR,
-                 verbose=False,
-                 outfile=None,
-                 vmin=None,
-                 vmax=None,
-                 title=None,
-                 inset=False,
-                 scale='log',
-                 inset_size=10,
-                 output_dir='',
-                 cmap='gray',
-                 frameinterval=15,
-                 movsampling=100,
-                 stabilize_corr=False,
-                 badcol='black',
-                 text=True,
-                 objType='static',
-                 stylesheet='dark_background'):
-        self.text = text
-        self.colorbar = colorbar
-        self.badcol = badcol
-        self.stabilize_corr = stabilize_corr
-        self.verbose = verbose
-        self.dir = data_dir
-        self.objType = objType
-        self.campaign = campaign
-        self.channel = channel
-        self.cadence = cadence
-        if campaign is None:
-            print('No campaign specified? Trying C0.')
-            self.campaign = 0
-        self.times = pd.read_csv(TIME_FILE)
-        self.loc = loc
-        self.movsampling = movsampling
-        self.tol = tol
-        self.return_radec = return_radec
-        self.return_xy = return_xy
-        self.inset = inset
-        self.vmin = vmin
-        self.vmax = vmax
-        self.cmap = cmap
-        self.title = title
-        self.frameinterval = frameinterval
-        self.inset_size = inset_size
+    Parameters
+    ----------
+    name : str
+        Name of object to resolve. Alternatively, pass an RA/Dec string or skycoord
+    campaign : int
+        Campaign number to search
+    channel : int
+        Channel to search
+    aperture : int or np.ndarray of ones and zeros.
+        aperture inside which to return the movie. If an int, will return a square of
+        shape n x n. If an np.ndarray, will use that array.
+    database_dir : str (default 'database/')
+        location of the munged database.
+    '''
+
+    def __init__(self, name=None, campaign=None, channel=None, aperture=8, database_dir=DATA_DIR, output='out.mp4'):
         self.name = name
-        self.scale = scale
-        self.outfile = outfile
-        self.output_dir = output_dir
-        self.stylesheet = stylesheet
-        self.ncad = 0
-        if title is None:
-            if (self.name is None) == False:
-                self.title = self.name
+        if isinstance(aperture, int):
+            self.aperture = np.ones((aperture, aperture))
+        elif isinstance(aperture, np.ndarray):
+            self.aperture = aperture
         else:
-            self.title = title
-        if self.verbose:
-            print('Initialised:')
-            print('\tCampaign: {}'.format(self.campaign))
-            print('\tChannel: {}'.format(self.channel))
-            print('\tPixel Tolerance: {}'.format(self.tol))
-
-    def calc_6hour(self):
-        '''Calculate the six hour cadence based on a small chunk of the data.
-        '''
-        try:
-            ch = self.channel
-            fname = self.dir + \
-                'c{}/{}/0.h5'.format('{0:02}'.format(self.campaign), '{0:02}'.format(ch))
-        except:
-            ch = 1
-            fname = self.dir + \
-                'c{}/{}/0.h5'.format('{0:02}'.format(self.campaign), '{0:02}'.format(ch))
-            while os.path.isfile(fname) is False:
-                fname = self.dir + \
-                    'c{}/{}/0.h5'.format('{0:02}'.format(self.campaign), '{0:02}'.format(ch))
-                ch += 1
-        if self.verbose:
-            print('Calculating 6 hour cadence using channel {}'.format(ch))
-
-        df = dd.read_hdf(fname, 'table')
-        wcs_file = '{}{}'.format(WCS_DIR, 'c{0:02}_'.format(self.campaign)+'{0:02}.p'.format(ch))
-        r = pickle.load(open(wcs_file, 'rb'))
-
-        std = np.zeros(12)
-        for i, phase in enumerate(np.arange(12)):
-            fc = np.arange(0, len(df.columns)-4, 12) + phase
-            fc = fc[np.where((fc >= 0) & (fc < len(df.columns)-4))[0]]
-            cols = df.columns[5:][fc]
-            t_df = df[(df['Row'] > 500) & (df['Row'] < 500) & (
-                df['Column'] > 600) & (df['Column'] < 600)]
-            f = np.asarray(t_df[list(cols)].compute()).T
-            d = f[1:]-f[0:-1]
-            std[i] = np.nanmedian(np.nanstd(d, axis=1))
-        phase = np.argmin(std)
-        fc = np.arange(0, len(df.columns)-4, 12)+phase
-        fc = fc[np.where((fc >= 0) & (fc < len(df.columns)-4))[0]]
-        return fc
-
-    def produce(self):
-        '''Based on the initial parameters go and produce some new numbers.
-        This function allows users to respecify initial keywords.
-        '''
-
+            raise K2MovieInputError('Input aperture is not an int or a numpy array.')
+        self.campaign = campaign
+        if (campaign not in np.arange(20, dtype=int)) and (campaign not in [91, 92, 101, 102, 111, 112]):
+            raise K2MovieInputError('Campaign {} is not available.'.format(campaign))
+        self.channel = channel
+        if (channel not in np.arange(85, dtype=int)):
+            raise K2MovieInputError('Channel {} is not available.'.format(channel))
+        self.fname = '{0}c{1}/{2}/k2movie_c{1}_ch{2}.h5'.format(database_dir,
+                                                                '{0:02}'.format(self.campaign), '{0:02}'.format(self.channel))
+        self.err_fname = '{0}c{1}/{2}/k2movie_c{1}_ch{2}_ERR.h5'.format(database_dir,
+                                                                        '{0:02}'.format(self.campaign), '{0:02}'.format(self.channel))
+        if not os.path.isfile(self.fname):
+            raise K2MovieInputError('No database file. Try running '
+                                    '`k2movie build -c {} -ch {}``'
+                                    ' in the terminal.'.format(campaign, channel))
+        self.output = output
+        self.times = pd.read_csv(TIME_FILE)
+        log.debug('Campaign: {}'.format(self.campaign))
+        log.debug('Channel: {}'.format(self.channel))
+        log.debug('Output file: {}'.format(output))
         # Create times from the campaign number
         self.LC = 29.4295*u.min
         campaign_str = 'c{}'.format(self.campaign)
@@ -160,51 +94,27 @@ class movie(object):
             self.times.EndTime[self.times.Campaign == campaign_str])[0]+2454833.
         self.start_cad = np.asarray(self.times.StartCad[self.times.Campaign == campaign_str])[0]
         self.end_cad = np.asarray(self.times.EndCad[self.times.Campaign == campaign_str])[0]
-        self.ncad = self.end_cad-self.start_cad
-        if self.cadence == 'all':
-            self.cadence = np.arange(self.ncad)
-        if self.cadence == 'sixhour':
-            self.cadence = self.calc_6hour()
-
-        # Format inputs correctly
-        if isinstance(self.channel, int):
-            self.channel = [self.channel]
-        else:
-            self.channel = self.channel
-        if (self.cadence is None):
-            self.cadence = np.asarray(np.arange(0, self.ncad, self.movsampling), dtype=int)
-        if isinstance(self.cadence, int):
-            self.cadence = [self.cadence]
-        else:
-            self.cadence = self.cadence
-        if (self.scale != 'log') & (self.scale != 'linear'):
-            self.scale = 'log'
-        if self.outfile is None:
-            if self.name is None:
-                self.outfile = '{}out.mp4'.format(self.output_dir)
-            else:
-                self.outfile = '{}{}.mp4'.format(
-                    self.output_dir, ((self.name.replace('/', '-')).replace(" ", "")))
-        else:
-            self.outfile = '{}{}'.format(self.output_dir, self.outfile)
-
-        # Find wherever the source is
-        self.find()
-
-        # Setup the filenames
-        self.fname = self.dir + \
-            'c{}/{}/0.h5'.format('{0:02}'.format(self.campaign), '{0:02}'.format(self.channel[0]))
-        if os.path.isfile(self.fname) == False:
-            print('No file.')
+        self.ncad = self.end_cad - self.start_cad
         self.df = dd.read_hdf((self.fname), key='table')
         self.y, self.x = np.asarray(self.df[['Row', 'Column']].compute()).T
         self.cols = np.asarray(self.df.columns[5:], dtype=float)
         self.cadence_names = np.asarray(self.df.columns[5:], dtype=int)
-        if (self.cadence is None) == False:
-            self.cadence_names = self.cadence_names[self.cadence]
-        self.wcs_file = '{}{}'.format(WCS_DIR, 'c{0:02}_'.format(
-            self.campaign)+'{0:02}.p'.format(self.channel[0]))
-        self.r = pickle.load(open(self.wcs_file, 'rb'))
+        log.debug('Read in database')
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", FITSFixedWarning)
+            self.wcs_file = '{}{}'.format(WCS_DIR, 'c{0:02}_'.format(
+                self.campaign)+'{0:02}.p'.format(self.channel))
+            self.wcs = pickle.load(open(self.wcs_file, 'rb'))
+        log.debug('Read in WCS')
+        try:
+            self.ra, self.dec = findStatic(self.name)
+            log.debug('Found static object {}'.format(self.name))
+        except K2MovieNoObject:
+            try:
+                self.ra, self.dec = findMoving(name, campaign, channel, time)
+                log.debug('Found moving object {}'.format(self.name))
+            except K2MovieNoObject:
+                raise K2MovieInputError('No object {}'.format(self.name))
 
     def find(self):
         '''Find the ras and decs of the target'''
@@ -236,89 +146,6 @@ class movie(object):
                     if self.verbose:
                         print('Channel: {}'.format(self.channel))
         self.find_loc()
-
-    def findStatic(self):
-        '''Find a static object in K2'''
-        if self.name is None:
-            return
-        if self.verbose:
-            print('\tQuerying MAST for {}'.format(self.name))
-        ra, dec = findMAST(self.name)
-        if (ra is not None) & (dec is not None):
-            ra, dec = ra*u.deg, dec*u.deg
-            if self.verbose:
-                print('\tFound :{},{}'.format(ra, dec))
-            self.loc = [ra, dec]
-        else:
-            if self.verbose:
-                print('\tNo static target')
-
-    def findMoving(self, lag=0.):
-        '''Find a moving object by querying JPL small bodies database'''
-        if self.verbose:
-            print('\tFinding a moving target')
-
-        time = (np.arange(self.ncad)*self.LC).to(u.day).value+self.start_time
-        # Get the ephemeris from JPL
-        df = K2ephem.get_ephemeris_dataframe(
-            self.name, self.campaign, self.campaign, step_size=1./(4))
-
-        times = [t[0:23] for t in np.asarray(df.index, dtype=str)]
-        df_jd = Time(times, format='isot').jd-lag
-        # K2 Footprint...
-        k = fields.getKeplerFov(self.campaign)
-
-        # If no cadence specified...sample a specified number of times...
-        cad = self.cadence
-        ra, dec = np.interp(time[cad], df_jd, df.ra) * \
-            u.deg, np.interp(time[cad], df_jd, df.dec)*u.deg
-        # If no cadence specified...only use the on silicon cadences...
-        if (self.cadence is None):
-            mask = list(map(onSiliconCheck, ra.value, dec.value, np.repeat(k, len(ra))))
-            if np.any(mask) == False:
-                print('No target on silicon')
-                return
-            ra, dec = ra[mask], dec[mask]
-            pos = np.where(mask)[0]
-            cad = cad[pos.min()-1:pos.max()+1]
-            cad = np.arange(cad[0], cad[-1])
-            self.cadence = cad
-            # Interpolate each cadence
-            ra, dec = np.interp(time[cad], df_jd, df.ra) * \
-                u.deg, np.interp(time[cad], df_jd, df.dec)*u.deg
-
-        if self.channel is None:
-            if self.verbose:
-                print('Finding channels...')
-            channels = np.zeros(len(cad), dtype=int)
-            onsil = np.asarray(
-                list(map(onSiliconCheck, ra.value, dec.value, np.repeat(k, len(ra)))))
-            lastchan = 0
-            for i, r, d in zip(range(self.ncad), ra.value, dec.value):
-                if onsil[i] is False:
-                    channels[i] = lastchan
-                else:
-                    try:
-                        channels[i] = (k.getChannelColRow(r, d)[0]).astype(int)
-                        lastchan = channels[i]
-                    except:
-                        channels[i] = lastchan
-            if len(onsil) > 1:
-                ok = np.arange(np.where(np.asarray(onsil) == True)[
-                               0][0]+1, np.where(np.asarray(onsil) == True)[0][-1]+1)
-            else:
-                ok = 0
-            channels = channels[ok]
-            cad = cad[ok]
-            ra, dec = np.interp(time[cad], df_jd, df.ra) * \
-                u.deg, np.interp(time[cad], df_jd, df.dec)*u.deg
-
-            self.cadence = np.asarray(cad)[np.asarray(channels) != 0]
-            self.channel = np.asarray(np.asarray(channels)[np.asarray(channels) != 0])
-        self.loc = [ra, dec]
-
-        if self.verbose:
-            print('\tChannel(s): {}'.format(self.channel))
 
     def find_loc(self):
         '''Find the location of the target on the detector'''
@@ -383,7 +210,7 @@ class movie(object):
         for ch in np.unique(self.channel):
             if self.verbose:
                 print('Switching to channel {}'.format(ch))
-            self.fname = self.dir + \
+            self.fname = self.dir +\
                 'c{}/{}/0.h5'.format('{0:02}'.format(self.campaign), '{0:02}'.format(ch))
             if os.path.isfile(self.fname) == False:
                 if self.verbose:
