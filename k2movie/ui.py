@@ -99,20 +99,7 @@ def list(dir):
 @click.option('-a', '--aperture', type=int,
               default=10, help="Pixel aperture size")
 def target(targetname, input, campaign, channel, level):
-    '''Creates a movie of a target'''
-    if campaign == -1:
-        campaign = None
-    else:
-        campaign = [campaign]
-
-    if channel == -1:
-        channel = None
-    else:
-        channel = [channel]
-    log.setLevel(level.upper())
-    bld(dir=output, indir=input, cachelim=cachelim, overwrite=overwrite,
-        campaigns=campaign, channels=channel)
-    return
+    pass
 
 
 if __name__ == '__main__':
