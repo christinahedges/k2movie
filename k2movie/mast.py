@@ -8,6 +8,7 @@ import astropy.units as u
 import K2ephem
 import numpy as np
 from astropy.time import Time
+from K2fov import getKeplerFov
 from K2fov.K2onSilicon import onSiliconCheck, fields
 
 from .build import silence
@@ -81,11 +82,15 @@ def findMAST(epic):
         return None, None
 
 
-def findStatic(name):
+def findStatic(name, campaign):
     '''Find a static object in K2'''
     ra, dec = findMAST(name)
     if (ra is not None) & (dec is not None):
-        return np.asarray([ra]), np.asarray([dec])
+        c = np.copy(campaign)
+        if c > 50:
+            c = c//10
+        ch, x1, y1 = getKeplerFov(c).getChannelColRow(ra, dec)
+        return np.asarray([ra]), np.asarray([dec]), int(ch), x1, y1
     else:
         raise K2MovieNoObject('No static target {}'.format(name))
 

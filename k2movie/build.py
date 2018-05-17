@@ -15,9 +15,11 @@ from k2mosaic import mast
 from contextlib import contextmanager
 import warnings
 import sys
+import gc
+from copy import deepcopy
 
 import logging
-log = logging.getLogger('\tk2movie ')
+log = logging.getLogger('k2movie ')
 
 
 @contextmanager
@@ -76,7 +78,7 @@ def get_wcs(campaign=0, channel=1, xs=[500], ys=[500], dir=WCS_DIR):
 
 
 def hdf5_mosaic(tpf_filenames, campaign, channel,
-                output_prefix='', memory_lim=4, dtype=np.float16):
+                output_prefix='', memory_lim=4, dtype=np.float32):
     '''Mosaic a set of TPFS into a dataframe. NOTE: by default this will be a float16
     dataframe which saves a little on storage space, these can become very large. Use
     these at your own risk.
@@ -103,8 +105,10 @@ def hdf5_mosaic(tpf_filenames, campaign, channel,
     else:
         tpf_filename = tpf_filenames[0]
     tpf = fitsio.FITS(tpf_filename)
-    cadencelist = tpf[1]['CADENCENO'].read()
+    cadencelist = deepcopy(tpf[1]['CADENCENO'].read())
     tpf.close()
+    del tpf
+    gc.collect()
     cols = np.asarray(cadencelist, dtype=str)
     cols = np.append(['RA', 'Dec', 'Row', 'Column', 'APERFLAG'], cols)
     df = pd.DataFrame(columns=cols, dtype=dtype)
@@ -122,19 +126,23 @@ def hdf5_mosaic(tpf_filenames, campaign, channel,
         os.remove(ERROR_FILEPATH)
 
     totalpixels = 0
-    with tqdm(total=len(tpf_filenames)) as bar:
+    with tqdm(total=len(tpf_filenames), desc='C{0:02} CH{1:02}'.format(campaign, channel)) as bar:
         for i, tpf_filename in enumerate(tpf_filenames):
             if tpf_filename.startswith("http"):
                 with silence():
                     tpf_filename = download_file(tpf_filename, cache=True)
-            tpf = fitsio.FITS(tpf_filename)
+
+            try:
+                tpf = fitsio.FITS(tpf_filename)
+            except OSError:
+                tpf = fitsio.FITS('.'.join(tpf_filename.split('.')[:-1]))
             try:
                 aperture = tpf[2].read()
             except:
                 continue
             aperture_shape = aperture.shape
             # Get the pixel coordinates of the corner of the aperture
-            hdr_list = tpf[1].read_header_list()
+            hdr_list = deepcopy(tpf[1].read_header_list())
             hdr = {elem['name']: elem['value'] for elem in hdr_list}
             col, row = int(hdr['1CRV5P']), int(hdr['2CRV5P'])
             height, width = aperture_shape[0], aperture_shape[1]
@@ -143,9 +151,11 @@ def hdf5_mosaic(tpf_filenames, campaign, channel,
             y, x = np.meshgrid(np.arange(col, col+width), np.arange(row, row+height))
             x, y = x[mask], y[mask]
             totalpixels += len(x.ravel())
-            flux = (tpf[1].read()['FLUX'])
-            error = (tpf[1].read()['FLUX_ERR'])
+            flux = deepcopy(tpf[1].read()['FLUX'])
+            error = deepcopy(tpf[1].read()['FLUX_ERR'])
             tpf.close()
+            del tpf
+            gc.collect()
             f = np.asarray([f[mask].ravel() for f in flux])
             ap = aperture[mask].ravel()
             e = np.asarray([e[mask].ravel() for e in error])
@@ -169,13 +179,15 @@ def hdf5_mosaic(tpf_filenames, campaign, channel,
                 edf = edf.append(pd.DataFrame(e.T, columns=cols, dtype=dtype))
             mem = np.nansum(df.memory_usage())/1E9
             if mem >= memory_lim/2:
-                log.debug(
+                log.info(
                     '\n{} gb memory limit reached after {} TPFs. Writing to file.'.format(memory_lim, i))
                 df.to_hdf(FILEPATH, 'table', append=True)
                 df = pd.DataFrame(columns=cols, dtype=dtype)
                 edf.to_hdf(ERROR_FILEPATH, 'table', append=True)
                 edf = pd.DataFrame(columns=cols, dtype=dtype)
             bar.update()
+            del flux, error, f, e
+            gc.collect()
         df.to_hdf(FILEPATH, 'table', append=True)
         edf.to_hdf(ERROR_FILEPATH, 'table', append=True)
         log.debug('\n{} Pixels Written'.format(totalpixels))
@@ -192,7 +204,7 @@ def get_dir_size(start_path='.'):
 
 
 def bld(dir=None, indir=None, cachelim=30, overwrite=False,
-        campaigns=None, channels=None, memory_lim=4):
+        campaigns=None, channels=None, memory_lim=1):
     '''Creates a database of HDF5 files'''
 
     if dir is not None:
@@ -231,7 +243,8 @@ def bld(dir=None, indir=None, cachelim=30, overwrite=False,
                 os.makedirs(edir)
             if (os.path.isfile('{}'.format(edir)+'k2movie_c{0:02}_ch{1:02}.h5'.format(campaign, ext))):
                 if overwrite == False:
-                    log.info('File Exists. Skipping. Set overwrite to True to overwrite.')
+                    log.info(
+                        'File C{0:02} Ch{1:02} Exists. Set overwrite to True.'.format(campaign, ext))
                     continue
             try:
                 urls = mast.get_tpf_urls('c{}'.format(campaign), ext)
@@ -280,6 +293,6 @@ def bld(dir=None, indir=None, cachelim=30, overwrite=False,
             hdf5_mosaic(tpf_filenames, campaign, ext,
                         output_prefix='{}'.format(edir),
                         memory_lim=memory_lim)
-            log.info('Campaign {} Complete'.format(campaign))
+            log.info('Campaign {} Channel {} Complete'.format(campaign, ext))
     log.info('ALL DONE')
     log.debug('-------------------------------')

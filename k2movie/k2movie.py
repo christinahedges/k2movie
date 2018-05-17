@@ -71,13 +71,41 @@ class target(object):
             raise K2MovieInputError('Input aperture is not an int or a numpy array.')
         self.tol_x = np.shape(self.aperture)[0]//2
         self.tol_y = np.shape(self.aperture)[1]//2
-
         self.campaign = campaign
         if (campaign not in np.arange(20, dtype=int)) and (campaign not in [91, 92, 101, 102, 111, 112]):
             raise K2MovieInputError('Campaign {} is not available.'.format(campaign))
-        self.channel = channel
-        if (channel not in np.arange(85, dtype=int)):
-            raise K2MovieInputError('Channel {} is not available.'.format(channel))
+        if channel is not None:
+            if (channel not in np.arange(85, dtype=int)):
+                raise K2MovieInputError('Channel {} is not available.'.format(channel))
+            self.channel = channel
+
+        if self.name is None:
+            self.x1 = np.asarray([self.loc[0]])
+            self.y1 = np.asarray([self.loc[1]])
+        else:
+            try:
+                self.ra, self.dec, channel, x1, y1 = findStatic(self.name, self.campaign)
+                if 'channel' not in self.__dir__():
+                    self.channel = channel
+                log.debug('Found static object {}'.format(self.name))
+            except K2MovieNoObject:
+                log.debug('No static object found for {}'.format(self.name))
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", FITSFixedWarning)
+                self.wcs_file = '{}{}'.format(WCS_DIR, 'c{0:02}_'.format(
+                    self.campaign)+'{0:02}.p'.format(self.channel))
+                self.wcs = pickle.load(open(self.wcs_file, 'rb'))
+                log.debug('Read in WCS')
+            if np.sum(self.wcs.wcs.crval) == 0:
+                log.warning('The WCS for C{} CH{} does not look correct. '
+                            'Using K2fov for location on focal plane. '
+                            'This is likely to be less accurate.'
+                            ''.format(self.campaign, self.channel))
+                self.x1, self.y1 = np.asarray([x1]), np.asarray([y1])
+            else:
+                self.x1, self.y1 = np.asarray([(np.asarray(self.wcs.wcs_world2pix(r, d, 1), dtype=float))
+                                               for r, d in zip(self.ra, self.dec)]).T
+
         self.fname = '{0}c{1}/{2}/k2movie_c{1}_ch{2}.h5'.format(database_dir,
                                                                 '{0:02}'.format(self.campaign), '{0:02}'.format(self.channel))
         self.err_fname = '{0}c{1}/{2}/k2movie_c{1}_ch{2}_ERR.h5'.format(database_dir,
@@ -87,7 +115,7 @@ class target(object):
                                     '`k2movie build -c {} -ch {}``'
                                     ' in the terminal.'.format(campaign, channel))
         if self.name is not None:
-            self.output = '{}.mp4'.format(name)
+            self.output = '{}.mp4'.format(self.name.replace(' ', '_'))
         else:
             self.output = 'out.mp4'
         self.times = pd.read_csv(TIME_FILE)
@@ -105,29 +133,11 @@ class target(object):
         self.end_cad = np.asarray(self.times.EndCad[self.times.Campaign == campaign_str])[0]
         self.ncad = self.end_cad - self.start_cad
         self.times = (np.arange(self.ncad)*self.LC).to(u.day).value+self.start_time
-        if self.name is None:
-            self.x1 = np.asarray([self.loc[0]])
-            self.y1 = np.asarray([self.loc[1]])
-        else:
-            try:
-                self.ra, self.dec = findStatic(self.name)
-                log.debug('Found static object {}'.format(self.name))
-            except K2MovieNoObject:
-                log.debug('No static object found for {}'.format(self.name))
-            self.x1, self.y1 = np.asarray([(np.asarray(self.wcs.wcs_world2pix(r, d, 1), dtype=float))
-                                           for r, d in zip(self.ra, self.dec)]).T
-
         self.df = dd.read_hdf((self.fname), key='table')
         self.y, self.x = np.asarray(self.df[['Row', 'Column']].compute()).T
         self.cols = np.asarray(self.df.columns[5:], dtype=float)
         self.cadence_names = np.asarray(self.df.columns[5:], dtype=int)
         log.debug('Read in database')
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", FITSFixedWarning)
-            self.wcs_file = '{}{}'.format(WCS_DIR, 'c{0:02}_'.format(
-                self.campaign)+'{0:02}.p'.format(self.channel))
-            self.wcs = pickle.load(open(self.wcs_file, 'rb'))
-        log.debug('Read in WCS')
         log.debug('Finding location on channel')
         log.debug('Trimming data')
 
@@ -165,6 +175,7 @@ class target(object):
         # If there's not a lot of movement the movie should be fixed
         fig = plt.figure(figsize=(4, 4))
         ax = fig.add_subplot(111)
+        plt.subplots_adjust(hspace=0, wspace=0)
         ax.set_facecolor('red')
         dat = (self.ar)
         if scale == 'log':

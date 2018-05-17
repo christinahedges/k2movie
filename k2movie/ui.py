@@ -86,5 +86,34 @@ def list(dir):
     return
 
 
+@k2movie.command()
+@click.option('-d', '--input', type=str, default=os.path.join(PACKAGEDIR, 'database/'),
+              help='Directory built database')
+@click.option('-c', '--campaign', type=int, default=None,
+              help='Campaign to use')
+@click.option('-ch', '--channel', type=int, default=None,
+              help='Channel to use')
+@click.option('-l', '--level', type=str,
+              default='INFO', metavar='[DEBUG, INFO, WARNING, ERROR, CRITICAL]',
+              help="Set logger level")
+@click.option('-a', '--aperture', type=int,
+              default=10, help="Pixel aperture size")
+def target(targetname, input, campaign, channel, level):
+    '''Creates a movie of a target'''
+    if campaign == -1:
+        campaign = None
+    else:
+        campaign = [campaign]
+
+    if channel == -1:
+        channel = None
+    else:
+        channel = [channel]
+    log.setLevel(level.upper())
+    bld(dir=output, indir=input, cachelim=cachelim, overwrite=overwrite,
+        campaigns=campaign, channels=channel)
+    return
+
+
 if __name__ == '__main__':
     k2movie()
