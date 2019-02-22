@@ -67,17 +67,22 @@ def list(dir):
     '''Prints the number of campaigns that are stored'''
     print('----------------------')
     print('Database Completeness:')
+    print('{}'.format(dir))
     print('----------------------')
     print()
     cnames = ['c00', 'c01', 'c02', 'c03', 'c04', 'c05', 'c06', 'c07', 'c08',
-              'c09', 'c10', 'c11', 'c12', 'c13', 'c14', 'c15', 'c16', ]
+              'c91', 'c92', 'c101', 'c102', 'c111', 'c112', 'c12', 'c13', 'c14', 'c15', 'c16', 'c17', 'c18', 'c19']
 
     # cnames = [c[len(dir):] for c in cnames]
     cnames = np.sort(cnames)
     for c in cnames:
         print('|{}|'.format(c), end='\t')
         mnames = glob('{}{}/*'.format(dir, c))
-        ex = np.asarray([os.path.isfile('{}/0.h5'.format(m)) for m in mnames])
+        ex = []
+        for m in mnames:
+            ca, ch = m.split('/')[-2], m.split('/')[-1]
+            ex.append(os.path.isfile('{}/k2movie_{}_ch{}.h5'.format(m, ca, ch)))
+        ex = np.asarray(ex)
         for i in range((len(np.where(ex == True)[0]))//2):
             print('|', end='')
         for i in range((84-len(np.where(ex == True)[0]))//2):

@@ -33,7 +33,7 @@ from .build import *
 DATA_DIR = os.path.join(PACKAGEDIR, 'data', 'database/')
 TIME_FILE = os.path.join(PACKAGEDIR, 'data', 'campaign_times.txt')
 WCS_DIR = os.path.join(PACKAGEDIR, 'data', 'wcs/')
-
+CAF = pd.read_csv(os.path.join(PACKAGEDIR, 'data', 'temp_caf_stats.csv'))
 
 class K2MovieInputError(Exception):
     pass
